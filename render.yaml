@@ -1,0 +1,27 @@
+services:
+  - type: web
+    name: propstream-api
+    env: node
+    region: oregon  # Choose the region closest to your main user base
+    plan: standard  # Using standard tier for better performance
+    buildCommand: npm install
+    startCommand: node server.js
+    healthCheckPath: /api
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: MONGO_URI
+        sync: false  # Set this manually in Render dashboard for security
+      - key: JWT_SECRET
+        sync: false  # Set this manually in Render dashboard for security
+      - key: JWT_EXPIRE
+        value: 30d
+      - key: CORS_ORIGIN
+        value: https://www.nova-prop.com
+    autoDeploy: true
+    disk:
+      name: uploads
+      mountPath: /opt/render/project/src/uploads
+      sizeGB: 1
