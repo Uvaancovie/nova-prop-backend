@@ -164,3 +164,6 @@ process.on('uncaughtException', (err) => {
   // Close server & exit process
   server.close(() => process.exit(1));
 });
+
+
+// the server js will mount all of the routes and functionalities to make sure that we can use them
