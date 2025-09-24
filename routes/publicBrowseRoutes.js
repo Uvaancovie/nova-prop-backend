@@ -1,5 +1,6 @@
 const express = require('express');
 const Property = require('../models/Property');
+const mongoose = require('mongoose');
 
 const router = express.Router();
 
@@ -46,20 +47,33 @@ router.get('/properties', async (req, res) => {
 // Public property details - /public/properties/:slug
 router.get('/properties/:slug', async (req, res) => {
   try {
-    const prop = await Property.findOne({ 
-      public_slug: req.params.slug, 
-      is_public: true 
+    const lookup = req.params.slug;
+
+    // Try by public_slug first
+    let prop = await Property.findOne({
+      public_slug: lookup,
+      is_public: true
     })
-      .select('name description city province address amenities price_per_night images realtor_id realtor_name realtor_email realtor_phone createdAt bedrooms bathrooms max_guests')
+      .select('name description city province address amenities price_per_night images realtor_id realtor_name realtor_email realtor_phone createdAt bedrooms bathrooms max_guests public_slug')
       .lean();
-      
+
+    // If not found by slug and the param looks like an ObjectId, try by _id as a fallback
+    if (!prop && mongoose.Types.ObjectId.isValid(lookup)) {
+      prop = await Property.findOne({
+        _id: lookup,
+        is_public: true
+      })
+        .select('name description city province address amenities price_per_night images realtor_id realtor_name realtor_email realtor_phone createdAt bedrooms bathrooms max_guests public_slug')
+        .lean();
+    }
+
     if (!prop) {
-      return res.status(404).json({ 
+      return res.status(404).json({
         success: false,
-        message: 'Property not found' 
+        message: 'Property not found'
       });
     }
-    
+
     // Enrich with realtor profile image when possible (best-effort)
     if (prop.realtor_id) {
       try {
@@ -74,15 +88,15 @@ router.get('/properties/:slug', async (req, res) => {
       prop.realtor_profileImage = null;
     }
 
-    res.json({ 
+    res.json({
       success: true,
-      property: prop 
+      property: prop
     });
   } catch (error) {
     console.error('Error fetching property details:', error);
-    res.status(400).json({ 
-      success: false, 
-      error: error.message 
+    res.status(400).json({
+      success: false,
+      error: error.message
     });
   }
 });

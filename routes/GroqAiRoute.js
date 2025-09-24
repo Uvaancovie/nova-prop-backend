@@ -1,0 +1,1 @@
+// i want to create a chat completion model for the realtor

@@ -11,6 +11,11 @@ exports.register = async (req, res) => {
   try {
     const { name, email, password, role, phone } = req.body;
 
+    // Log registration attempt in development for debugging (do not log passwords)
+    if (process.env.NODE_ENV === 'development') {
+      console.log('Register attempt:', { name, email, role, phone });
+    }
+
     // Check if user already exists
     const userExists = await User.findOne({ email });
 
@@ -44,6 +49,12 @@ exports.register = async (req, res) => {
       });
     }
   } catch (error) {
+    // If validation error, return details
+    if (error && error.name === 'ValidationError') {
+      const messages = Object.values(error.errors).map(e => e.message);
+      return res.status(400).json({ success: false, error: messages.join('; ') });
+    }
+
     res.status(400).json({
       success: false,
       error: error.message

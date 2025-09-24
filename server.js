@@ -67,20 +67,29 @@ app.use(compression());
 app.use(cors({
   origin: function(origin, callback) {
     // Allow requests with no origin (like mobile apps, curl requests)
-    if(!origin) return callback(null, true);
-    
-    // List of allowed origins
-    const allowedOrigins = [
+    if (!origin) return callback(null, true);
+
+    // Build a list of allowed origins (include env-configured origin and known hosts)
+    const allowedRaw = [
+      process.env.CORS_ORIGIN,
       'http://localhost:5173',
       'https://www.nova-prop.com',
-      'https://nova-prop.com'
-    ];
-    
-    if(allowedOrigins.indexOf(origin) !== -1 || !origin) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
+      'https://nova-prop.com',
+      'https://nova-prop-backend.onrender.com'
+    ].filter(Boolean);
+
+    // Normalize trailing slashes for comparison
+    const normalize = (u) => (typeof u === 'string' ? u.replace(/\/+$/, '') : u);
+    const normalizedOrigin = normalize(origin);
+    const normalizedAllowed = allowedRaw.map(normalize);
+
+    if (normalizedAllowed.indexOf(normalizedOrigin) !== -1) {
+      return callback(null, true);
     }
+
+    // Log rejected origins to help debugging
+    console.warn(`CORS rejected origin: ${origin}`);
+    return callback(new Error('Not allowed by CORS'));
   },
   credentials: true
 }));
