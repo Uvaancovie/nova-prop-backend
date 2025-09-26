@@ -1,14 +1,14 @@
-import Groq from "groq-sdk";
+const Groq = require('groq-sdk');
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
-export async function main() {
+async function main() {
   const chatCompletion = await getGroqChatCompletion();
   // Print the completion returned by the LLM.
   console.log(chatCompletion.choices[0]?.message?.content || "");
 }
 
-export async function getGroqChatCompletion() {
+async function getGroqChatCompletion() {
   return groq.chat.completions.create({
     messages: [
       {
@@ -20,4 +20,9 @@ export async function getGroqChatCompletion() {
   });
 }
 
-//performing chat completion
+// performing chat completion
+
+module.exports = {
+  main,
+  getGroqChatCompletion,
+};
