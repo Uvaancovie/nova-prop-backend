@@ -156,6 +156,14 @@ const payfastItn = require('./routes/payfast.itn');
 app.use('/api/billing', billingRoutes);
 app.use(payfastItn);
 
+// Start trial expiry job (if configured)
+try {
+  const trialExpiryJob = require('./scripts/trialExpiryJob');
+  trialExpiryJob.start();
+} catch (err) {
+  console.warn('No trialExpiryJob started:', err.message);
+}
+
 // Add a route for testing the API
 app.get('/api', (req, res) => {
   res.json({ message: 'Welcome to PropStream API', status: 'running' });

@@ -8,6 +8,41 @@ const Organization = require('../models/Organization');
 
 const router = express.Router();
 
+const authRequired = authMiddleware.protect || authMiddleware.authRequired || ((req,res,next) => { if (!req.user) return res.status(401).json({ message: 'Unauthorized' }); next(); });
+
+// POST /api/billing/start-trial
+router.post('/start-trial', authRequired, async (req, res) => {
+  try {
+    const user = req.user;
+    if (!user) return res.status(401).json({ message: 'Unauthorized' });
+
+    let org = null;
+    if (user.organizationId) org = await Organization.findById(user.organizationId);
+    if (!org) {
+      org = await Organization.create({ name: `${user.name || user.email}'s org`, owner: user._id });
+      const User = require('../models/User');
+      await User.findByIdAndUpdate(user._id, { organizationId: org._id });
+    }
+
+    const trialDays = Number(process.env.TRIAL_DAYS || 14);
+    const trialEndsAt = new Date(Date.now() + trialDays * 24 * 60 * 60 * 1000);
+
+    let sub = await Subscription.findOne({ orgId: org._id }).sort({ createdAt: -1 });
+    if (sub && sub.status === 'trialing') {
+      sub.trialEndsAt = trialEndsAt;
+      await sub.save();
+    } else {
+      sub = await Subscription.create({ orgId: org._id, planId: req.body.planId || 'starter', provider: 'internal', status: 'trialing', trialEndsAt });
+    }
+
+    res.json({ ok: true, subscription: sub });
+  } catch (err) {
+    console.error('start-trial error', err);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+
 function signParams(params) {
   const pairs = Object.keys(params).sort().map(k => `${k}=${encodeURIComponent(String(params[k]).trim()).replace(/%20/g, '+')}`);
   const base = pairs.join('&');
@@ -15,8 +50,6 @@ function signParams(params) {
   const signature = crypto.createHash('md5').update(withPass).digest('hex');
   return `${base}&signature=${signature}`;
 }
-
-const authRequired = authMiddleware.protect || authMiddleware.authRequired || ((req,res,next) => { if (!req.user) return res.status(401).json({ message: 'Unauthorized' }); next(); });
 
 // Dev-only: return the exact PayFast params/signature/action URL for a plan
 router.get('/debug/:planId', authRequired, (req, res) => {
@@ -53,6 +86,19 @@ router.get('/debug/:planId', authRequired, (req, res) => {
   const PAYFAST_HOST = require('../src/lib/payfast').PAYFAST_HOST;
   const action = `${PAYFAST_HOST}/eng/process?${base}&signature=${signature}`;
   res.json({ params, base, signature, action });
+});
+
+// Production-safe env check (protected) - returns missing required billing env vars
+// Use header 'x-admin-token: <ADMIN_DEBUG_TOKEN>' to authenticate this check.
+router.get('/env-check', (req, res) => {
+  const token = req.headers['x-admin-token'] || req.headers['x-admin-token'.toLowerCase()];
+  const expected = process.env.ADMIN_DEBUG_TOKEN;
+  if (!expected) return res.status(403).json({ message: 'Admin debug token not configured on server' });
+  if (!token || token !== expected) return res.status(403).json({ message: 'Forbidden' });
+
+  const required = ['PAYFAST_MERCHANT_ID', 'PAYFAST_MERCHANT_KEY', 'APP_BASE_URL', 'API_BASE_URL'];
+  const missing = required.filter(k => !process.env[k]);
+  return res.json({ ok: true, missing });
 });
 
 // POST /api/billing/subscribe (legacy frontend hook)
