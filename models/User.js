@@ -37,6 +37,10 @@ const userSchema = new mongoose.Schema({
     maxlength: [500, 'Bio cannot be more than 500 characters']
   },
   company: String,
+  organizationId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Organization'
+  },
   socialLinks: {
     website: String,
     facebook: String,

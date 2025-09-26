@@ -46,7 +46,18 @@ const limiter = rateLimit({
 });
 app.use('/api/', limiter);
 
+// RAW BODY capture for PayFast ITN — must be before urlencoded() parser
+app.use((req, res, next) => {
+  const ct = (req.headers['content-type'] || '').toLowerCase();
+  if (ct.includes('application/x-www-form-urlencoded')) {
+    let buf = '';
+    req.on('data', (c) => (buf += c));
+    req.on('end', () => { req.rawBody = buf; next(); });
+  } else next();
+});
+
 // Body parser
+app.use(express.urlencoded({ extended: true }));
 app.use(express.json({ limit: '10mb' }));
 
 // Data sanitization against NoSQL query injection
@@ -122,6 +133,14 @@ app.use('/api/invoices', invoiceRoutes);
 app.use('/api/waitlist', waitlistRoutes);
 app.use('/api/admin', adminRoutes);
 
+// Normalize accidental double /api/api paths (frontend sometimes prefixes twice)
+app.use((req, res, next) => {
+  if (req.originalUrl && req.originalUrl.startsWith('/api/api/')) {
+    req.url = req.url.replace('/api/api/', '/api/');
+  }
+  next();
+});
+
 // AI and public routes
 const aiChatRoutes = require('./routes/aiChatRoutes');
 const publicBrowseRoutes = require('./routes/publicBrowseRoutes');
@@ -130,6 +149,12 @@ app.use('/api/public', publicBrowseRoutes);
 
 // Serve uploads
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
+// Billing / PayFast routes
+const billingRoutes = require('./routes/billing');
+const payfastItn = require('./routes/payfast.itn');
+app.use('/api/billing', billingRoutes);
+app.use(payfastItn);
 
 // Add a route for testing the API
 app.get('/api', (req, res) => {
