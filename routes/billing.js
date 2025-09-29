@@ -146,9 +146,15 @@ router.post('/subscribe', authRequired, async (req, res) => {
       frequency: 3,
       cycles: 0,
     };
-    const query = signParams(params);
-    const action = `${PAYFAST_HOST}/eng/process?${query}`;
-    res.json({ redirect: action });
+  const query = signParams(params);
+  // query is base&signature=...
+  const sigIndex = query.indexOf('&signature=');
+  const signature = sigIndex !== -1 ? query.slice(sigIndex + '&signature='.length) : '';
+  const action = `${PAYFAST_HOST}/eng/process`;
+  const escapeHtml = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  const inputs = Object.keys(params).map(k => `<input type="hidden" name="${escapeHtml(k)}" value="${escapeHtml(params[k] ?? '')}" />`).join('') + `<input type="hidden" name="signature" value="${escapeHtml(signature)}" />`;
+  const html = `<!doctype html><html><body><form id="pf" action="${action}" method="post">${inputs}</form><script>document.getElementById('pf').submit();</script></body></html>`;
+  res.json({ redirectHtml: html });
   } catch (e) {
     console.error('subscribe error', e);
     res.status(500).json({ message: 'Server error' });
@@ -188,12 +194,13 @@ router.post('/checkout/:planId', authRequired, async (req, res) => {
       cycles: 0,
     };
     const query = signParams(params);
-    const action = `${PAYFAST_HOST}/eng/process?${query}`;
+    const sigIndex = query.indexOf('&signature=');
+    const signature = sigIndex !== -1 ? query.slice(sigIndex + '&signature='.length) : '';
+    const action = `${PAYFAST_HOST}/eng/process`;
+    const escapeHtml = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    const inputs = Object.keys(params).map(k => `<input type="hidden" name="${escapeHtml(k)}" value="${escapeHtml(params[k] ?? '')}" />`).join('') + `<input type="hidden" name="signature" value="${escapeHtml(signature)}" />`;
     res.setHeader('Content-Type', 'text/html');
-    return res.send(`<!doctype html><html><body>
-      <form id="pf" action="${action}" method="post"></form>
-      <script>document.getElementById('pf').submit();</script>
-    </body></html>`);
+    return res.send(`<!doctype html><html><body>${/* include form with inputs for POST */''}<form id="pf" action="${action}" method="post">${inputs}</form><script>document.getElementById('pf').submit();</script></body></html>`);
   } catch (err) {
     console.error('checkout error', err);
     return res.status(500).json({ message: 'Server error' });
