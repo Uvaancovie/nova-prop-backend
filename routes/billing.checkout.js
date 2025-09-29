@@ -67,6 +67,16 @@ router.post('/billing/checkout/:planId', authRequired, async (req, res) => {
     };
 
     const PASSPHRASE = PASSPHRASE || process.env.PAYFAST_PASSPHRASE || '';
+    // Use alphabetical signature as PayFast expects for Custom Integration
+    // Build the alphabetical signature and also return the cleaned fields we will actually POST
+    const clean = {};
+    for (const [k, v] of Object.entries(params)) {
+      if (v === undefined || v === null) continue;
+      const sv = String(v).trim();
+      if (!sv) continue;
+      clean[k] = sv;
+    }
+    // Build base using FORM_ORDER (document/form order) — some PayFast Subscription flows expect this order
     const FORM_ORDER = [
       'merchant_id','merchant_key','return_url','cancel_url','notify_url',
       'name_first','name_last','email_address','cell_number',
@@ -77,28 +87,30 @@ router.post('/billing/checkout/:planId', authRequired, async (req, res) => {
       'subscription_type','billing_date','recurring_amount','frequency','cycles',
       'subscription_notify_email','subscription_notify_webhook','subscription_notify_buyer'
     ];
-    // Use alphabetical signature as PayFast expects for Custom Integration
-    const { base, signature } = (function(){
-      const clean = {};
+    // Prefer alphabetical A->Z signing for robustness; capture cleaned fields and keys
+    const { base, baseWithPass, signature, fields: cleanedFields, keys } = (function(){
+      const clean2 = {};
       for (const [k, v] of Object.entries(params)) {
         if (v === undefined || v === null) continue;
         const sv = String(v).trim();
         if (!sv) continue;
-        clean[k] = sv;
+        clean2[k] = sv;
       }
-      const keys = Object.keys(clean).sort();
-      const base = keys.map(k => `${k}=${encodeURIComponent(String(clean[k])).replace(/%20/g, '+').replace(/%[0-9a-f]{2}/g, m => m.toUpperCase())}`).join('&');
-      const baseWithPass = (process.env.PAYFAST_PASSPHRASE || '') ? `${base}&passphrase=${encodeURIComponent(process.env.PAYFAST_PASSPHRASE).replace(/%20/g, '+').replace(/%[0-9a-f]{2}/g, m => m.toUpperCase())}` : base;
-      const signature = require('crypto').createHash('md5').update(baseWithPass).digest('hex');
-      return { base: baseWithPass, signature };
+      const ks = Object.keys(clean2).sort();
+      const b = ks.map(k => `${k}=${encodeURIComponent(String(clean2[k])).replace(/%20/g, '+').replace(/%[0-9a-f]{2}/g, m => m.toUpperCase())}`).join('&');
+      const bwp = (process.env.PAYFAST_PASSPHRASE || '') ? `${b}&passphrase=${encodeURIComponent(process.env.PAYFAST_PASSPHRASE).replace(/%20/g, '+').replace(/%[0-9a-f]{2}/g, m => m.toUpperCase())}` : b;
+      const sig = require('crypto').createHash('md5').update(bwp).digest('hex');
+      return { base: b, baseWithPass: bwp, signature: sig, fields: clean2, keys: ks };
     })();
-    if (String(process.env.PAYFAST_DEBUG || '').toLowerCase() === 'true') {
-      console.log('[PAYFAST DEBUG] checkout base:', base);
+    if (String(process.env.PAYFAST_DEBUG || '').toLowerCase() === 'true' || String(process.env.PAYFAST_DEBUG_SIGNATURE || '').toLowerCase() === 'true') {
+      console.log('[PAYFAST DEBUG] checkout base (with passphrase):', baseWithPass);
       console.log('[PAYFAST DEBUG] checkout signature:', signature);
     }
     const action = `${PAYFAST_HOST}/eng/process`;
     const escapeHtml = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-    const inputs = Object.keys(params).map(k => `<input type="hidden" name="${escapeHtml(k)}" value="${escapeHtml(params[k] ?? '')}" />`).join('') + `<input type="hidden" name="signature" value="${escapeHtml(signature)}" />`;
+    // Only post the cleaned fields (the exact set we signed) to avoid empty keys being present in the form
+    // Build inputs in alphabetical order (same as the signing base)
+    const inputs = keys.map(k => `<input type="hidden" name="${escapeHtml(k)}" value="${escapeHtml(cleanedFields[k] ?? '')}" />`).join('') + `<input type="hidden" name="signature" value="${escapeHtml(signature)}" />`;
     res.setHeader('Content-Type', 'text/html');
     return res.send(`<!doctype html><html><body><form id="pf" action="${action}" method="post">${inputs}</form><script>document.getElementById('pf').submit();</script></body></html>`);
   } catch (err) {
