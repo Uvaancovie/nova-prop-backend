@@ -75,35 +75,73 @@ app.use(compression());
 // NOTE: AI routes mounted later with other API routers (see below)
 
 // Enable CORS - Configure for your domain
-app.use(cors({
-  origin: function(origin, callback) {
-    // Allow requests with no origin (like mobile apps, curl requests)
-    if (!origin) return callback(null, true);
+// Accept a comma-separated list in process.env.CORS_ORIGIN, fall back to defaults
+const corsOptions = (() => {
+  const fromEnv = (process.env.CORS_ORIGIN || '')
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean);
 
-    // Build a list of allowed origins (include env-configured origin and known hosts)
-    const allowedRaw = [
-      process.env.CORS_ORIGIN,
+  const defaults = [
+    'http://localhost:5173',
+    'https://www.nova-prop.com',
+    'https://nova-prop.com',
+    'https://nova-prop-backend.onrender.com'
+  ];
+
+  const allowed = Array.from(new Set([...fromEnv, ...defaults]));
+
+  const normalize = (u) => (typeof u === 'string' ? u.replace(/\/+$/, '') : u);
+
+  return {
+    origin: function(origin, callback) {
+      // Allow server-to-server or non-browser requests with no origin
+      if (!origin) return callback(null, true);
+
+      const normalizedOrigin = normalize(origin);
+      const normalizedAllowed = allowed.map(normalize);
+      if (normalizedAllowed.indexOf(normalizedOrigin) !== -1) {
+        return callback(null, true);
+      }
+      // Do NOT throw here - return false to let the CORS middleware handle it
+      console.warn('CORS rejected origin:', origin);
+      return callback(null, false);
+    },
+    credentials: true,
+    methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
+    optionsSuccessStatus: 200
+  };
+})();
+
+app.use(cors(corsOptions));
+// Explicitly handle preflight for all routes
+app.options('*', cors(corsOptions));
+
+// Reflect allowed origin header explicitly for allowed origins so
+// responses include Access-Control-Allow-Origin and Access-Control-Allow-Credentials
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (!origin) return next();
+  const normalize = (u) => (typeof u === 'string' ? u.replace(/\/+$/, '') : u);
+  const allowedList = (process.env.CORS_ORIGIN || '')
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean)
+    .concat([
       'http://localhost:5173',
       'https://www.nova-prop.com',
       'https://nova-prop.com',
       'https://nova-prop-backend.onrender.com'
-    ].filter(Boolean);
-
-    // Normalize trailing slashes for comparison
-    const normalize = (u) => (typeof u === 'string' ? u.replace(/\/+$/, '') : u);
-    const normalizedOrigin = normalize(origin);
-    const normalizedAllowed = allowedRaw.map(normalize);
-
-    if (normalizedAllowed.indexOf(normalizedOrigin) !== -1) {
-      return callback(null, true);
-    }
-
-    // Log rejected origins to help debugging
-    console.warn(`CORS rejected origin: ${origin}`);
-    return callback(new Error('Not allowed by CORS'));
-  },
-  credentials: true
-}));
+    ]);
+  const normalizedAllowed = allowedList.map(normalize);
+  if (normalizedAllowed.indexOf(normalize(origin)) !== -1) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    res.setHeader('Vary', 'Origin');
+  }
+  next();
+});
 
 // Set cache control headers
 app.use((req, res, next) => {
