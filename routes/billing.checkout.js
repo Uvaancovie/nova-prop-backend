@@ -6,12 +6,24 @@ const authMiddleware = require('../middleware/auth');
 
 const router = express.Router();
 
-function signParams(params) {
-  const pairs = Object.keys(params).sort().map(k => `${k}=${encodeURIComponent(String(params[k]).trim()).replace(/%20/g, '+')}`);
-  const base = pairs.join('&');
-  const withPass = PASSPHRASE ? `${base}&passphrase=${encodeURIComponent(PASSPHRASE).replace(/%20/g, '+')}` : base;
-  const signature = crypto.createHash('md5').update(withPass).digest('hex');
-  return `${base}&signature=${signature}`;
+function encodePlusUpper(str) {
+  const s = String(str);
+  return encodeURIComponent(s).replace(/%20/g, '+').replace(/%[0-9a-f]{2}/g, m => m.toUpperCase());
+}
+
+function buildSignature(formOrderKeys, fields, passphrase) {
+  const pairs = [];
+  for (const key of formOrderKeys) {
+    const v = fields[key];
+    if (v === undefined || v === null) continue;
+    const sv = String(v).trim();
+    if (sv === '') continue;
+    pairs.push(`${key}=${encodePlusUpper(sv)}`);
+  }
+  let base = pairs.join('&');
+  if (passphrase) base += `&passphrase=${encodePlusUpper(passphrase)}`;
+  const signature = crypto.createHash('md5').update(base).digest('hex');
+  return { base, signature };
 }
 
 const authRequired = authMiddleware.protect || authMiddleware.authRequired || ((req,res,next) => { if (!req.user) return res.status(401).json({ message: 'Unauthorized' }); next(); });
@@ -54,14 +66,23 @@ router.post('/billing/checkout/:planId', authRequired, async (req, res) => {
       cycles: 0,
     };
 
-    const query = signParams(params);
-    const action = `${PAYFAST_HOST}/eng/process?${query}`;
-
+    const PASSPHRASE = PASSPHRASE || process.env.PAYFAST_PASSPHRASE || '';
+    const FORM_ORDER = [
+      'merchant_id','merchant_key','return_url','cancel_url','notify_url',
+      'name_first','name_last','email_address','cell_number',
+      'm_payment_id','amount','item_name','item_description',
+      'custom_int1','custom_int2','custom_int3','custom_int4','custom_int5',
+      'custom_str1','custom_str2','custom_str3','custom_str4','custom_str5',
+      'email_confirmation','confirmation_address',
+      'subscription_type','billing_date','recurring_amount','frequency','cycles',
+      'subscription_notify_email','subscription_notify_webhook','subscription_notify_buyer'
+    ];
+    const { base, signature } = buildSignature(FORM_ORDER, params, process.env.PAYFAST_PASSPHRASE || '');
+    const action = `${PAYFAST_HOST}/eng/process`;
+    const escapeHtml = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    const inputs = Object.keys(params).map(k => `<input type="hidden" name="${escapeHtml(k)}" value="${escapeHtml(params[k] ?? '')}" />`).join('') + `<input type="hidden" name="signature" value="${escapeHtml(signature)}" />`;
     res.setHeader('Content-Type', 'text/html');
-    return res.send(`<!doctype html><html><body>
-      <form id="pf" action="${action}" method="post"></form>
-      <script>document.getElementById('pf').submit();</script>
-    </body></html>`);
+    return res.send(`<!doctype html><html><body><form id="pf" action="${action}" method="post">${inputs}</form><script>document.getElementById('pf').submit();</script></body></html>`);
   } catch (err) {
     console.error('checkout error', err);
     return res.status(500).json({ message: 'Server error' });

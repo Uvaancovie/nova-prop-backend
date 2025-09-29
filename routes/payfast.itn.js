@@ -34,6 +34,27 @@ function parseRawForm(raw) {
   return out;
 }
 
+function encodePlusUpper(str) {
+  const s = String(str);
+  return encodeURIComponent(s).replace(/%20/g, '+').replace(/%[0-9a-f]{2}/g, m => m.toUpperCase());
+}
+
+function verifyItnSignatureOrdered(form, passphrase) {
+  // Build pairs in the order received in the form (object iteration order preserves insertion order)
+  const pairs = [];
+  for (const [k, v] of Object.entries(form)) {
+    if (k === 'signature') continue;
+    if (v === undefined || v === null) continue;
+    const sv = String(v).trim();
+    if (sv === '') continue; // skip empties
+    pairs.push(`${k}=${encodePlusUpper(sv)}`);
+  }
+  let base = pairs.join('&');
+  if (passphrase) base += `&passphrase=${encodePlusUpper(passphrase)}`;
+  const calc = crypto.createHash('md5').update(base).digest('hex');
+  return { base, calc };
+}
+
 function computeVariantSignatures(form, raw) {
   const variants = [];
 
@@ -95,20 +116,26 @@ router.post('/payfast/itn', async (req, res) => {
       console.info('PayFast ITN has no signature (signature requirement may be disabled). Skipping signature verification.');
       console.debug('PayFast ITN parsed form', Object.keys(form).reduce((acc, k) => { acc[k] = form[k]; return acc; }, {}));
     } else {
-      // Compute several signature variants and accept if any matches
-      const variants = computeVariantSignatures(form, raw).map(v => ({ name: v.name, signature: (v.signature||'').toLowerCase() }));
-      const matched = variants.find(v => v.signature === receivedSig);
-      if (!matched) {
-        console.warn('PayFast ITN signature mismatch - no variant matched', {
-          receivedSig: receivedSig,
-          rawBodyPreview: raw && raw.slice(0, 200),
-          parsedForm: Object.keys(form).reduce((acc, k) => { acc[k] = form[k]; return acc; }, {}),
-          variants
-        });
-        return res.status(200).send('OK');
+      // Primary verification: ordered fields (document/form order) with passphrase
+      const { base: orderedBase, calc: orderedCalc } = verifyItnSignatureOrdered(form, PASSPHRASE);
+      if ((orderedCalc || '').toLowerCase() === receivedSig) {
+        console.info('PayFast ITN signature matched using ordered base');
+      } else {
+        // Fallback: try computed variants
+        const variants = computeVariantSignatures(form, raw).map(v => ({ name: v.name, signature: (v.signature||'').toLowerCase() }));
+        const matched = variants.find(v => v.signature === receivedSig);
+        if (!matched) {
+          console.warn('PayFast ITN signature mismatch - no variant matched', {
+            receivedSig: receivedSig,
+            orderedBase: orderedBase,
+            rawBodyPreview: raw && raw.slice(0, 200),
+            parsedForm: Object.keys(form).reduce((acc, k) => { acc[k] = form[k]; return acc; }, {}),
+            variants
+          });
+          return res.status(200).send('OK');
+        }
+        console.info('PayFast ITN signature matched using variant', matched.name);
       }
-      // matched — proceed
-      console.info('PayFast ITN signature matched using variant', matched.name);
     }
 
     if (form.merchant_id !== MERCHANT_ID) {
