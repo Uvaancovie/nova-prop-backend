@@ -31,20 +31,7 @@ function buildSignature(formOrderKeys, fields, passphrase) {
 }
 
 // Alphabetical signature builder: sort keys A->Z, drop empties, encode with + and UPPERCASE %
-function buildAlphabeticalSignature(fields, passphrase) {
-  const clean = {};
-  for (const [k, v] of Object.entries(fields)) {
-    if (v === undefined || v === null) continue;
-    const sv = String(v).trim();
-    if (!sv) continue;
-    clean[k] = sv;
-  }
-  const keys = Object.keys(clean).sort();
-  const base = keys.map(k => `${k}=${encodePlusUpper(clean[k])}`).join('&');
-  const baseWithPass = passphrase ? `${base}&passphrase=${encodePlusUpper(passphrase)}` : base;
-  const signature = crypto.createHash('md5').update(baseWithPass).digest('hex');
-  return { base, baseWithPass, signature, fields: clean, keys };
-}
+// NOTE: Alphabetical signing helper removed. Payment page signing must use FORM_ORDER via buildSignature().
 
 // Canonical form order used by some PayFast subscription flows when explicit ordering is required
 const FORM_ORDER = [
@@ -319,12 +306,9 @@ router.post('/compute-signature', authRequired, (req, res) => {
       if (!sv) continue;
       cleaned[k] = sv;
     }
-    const pairs = Object.keys(cleaned).sort().map(k => `${k}=${encodePlusUpper(cleaned[k])}`);
-    const base = pairs.join('&');
-    const withPass = PASSPHRASE ? `${base}&passphrase=${encodePlusUpper(PASSPHRASE)}` : base;
-    const signature = crypto.createHash('md5').update(withPass).digest('hex');
-    const action = `${PAYFAST_HOST}/eng/process?${base}&signature=${signature}`;
-    return res.json({ base: withPass, signature, action });
+  const { base: baseForm, signature: signatureForm } = buildSignature(FORM_ORDER, cleaned, PASSPHRASE);
+  const action = `${PAYFAST_HOST}/eng/process`;
+  return res.json({ base: baseForm, signature: signatureForm, action });
   } catch (err) {
     console.error('compute-signature error', err);
     return res.status(500).json({ message: 'Server error' });
