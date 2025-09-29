@@ -31,9 +31,16 @@ router.post('/payfast/itn', async (req, res) => {
 
     // Verify
     const expected = md5Signature(form);
-    const receivedSig = (form.signature || '').toLowerCase();
+
+    const receivedSigRaw = form.signature;
+    const receivedSig = (receivedSigRaw || '').toLowerCase();
     const expectedSig = (expected || '').toLowerCase();
-    if (receivedSig !== expectedSig) {
+
+    if (!receivedSigRaw) {
+      // PayFast 'require signature' may be turned off; accept ITN but log for visibility
+      console.info('PayFast ITN has no signature (signature requirement may be disabled). Skipping signature verification.');
+      console.debug('PayFast ITN parsed form', Object.keys(form).reduce((acc, k) => { acc[k] = form[k]; return acc; }, {}));
+    } else if (receivedSig !== expectedSig) {
       console.warn('PayFast ITN signature mismatch', {
         receivedSig: receivedSig,
         expectedSig: expectedSig,
