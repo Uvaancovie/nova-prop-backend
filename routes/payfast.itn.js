@@ -128,7 +128,7 @@ router.post('/payfast/itn', async (req, res) => {
       }
       const keys = Object.keys(clean).sort();
       const baseAlpha = keys.map(k => `${k}=${encodeURIComponent(String(clean[k])).replace(/%20/g, '+').replace(/%[0-9a-f]{2}/g, m => m.toUpperCase())}`).join('&');
-      const baseWithPass = PASSPHRASE ? `${baseAlpha}&passphrase=${encodeURIComponent(PASSPHRASE).replace(/%20/g, '+').replace(/%[0-9a-f]{2}/g, m => m.toUpperCase())}` : baseAlpha;
+      const baseWithPass = PASSPHRASE ? `${baseAlpha}${PASSPHRASE}` : baseAlpha;
       if (String(process.env.PAYFAST_DEBUG || '').toLowerCase() === 'true') {
         console.log('[PAYFAST DEBUG] itn base:', baseWithPass);
       }
