@@ -133,6 +133,10 @@ app.use('/api/invoices', invoiceRoutes);
 app.use('/api/waitlist', waitlistRoutes);
 app.use('/api/admin', adminRoutes);
 
+// Mount me summary route
+const meSummary = require('./routes/me.summary');
+app.use('/api', meSummary);
+
 // Normalize accidental double /api/api paths (frontend sometimes prefixes twice)
 app.use((req, res, next) => {
   if (req.originalUrl && req.originalUrl.startsWith('/api/api/')) {
