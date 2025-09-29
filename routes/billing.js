@@ -41,7 +41,7 @@ function buildAlphabeticalSignature(fields, passphrase) {
   }
   const keys = Object.keys(clean).sort();
   const base = keys.map(k => `${k}=${encodePlusUpper(clean[k])}`).join('&');
-  const baseWithPass = passphrase ? `${base}${passphrase}` : base;
+  const baseWithPass = passphrase ? `${base}&passphrase=${encodePlusUpper(passphrase)}` : base;
   const signature = crypto.createHash('md5').update(baseWithPass).digest('hex');
   return { base, baseWithPass, signature, fields: clean, keys };
 }
@@ -304,7 +304,7 @@ router.post('/compute-signature', authRequired, (req, res) => {
     }
     const pairs = Object.keys(cleaned).sort().map(k => `${k}=${encodePlusUpper(cleaned[k])}`);
     const base = pairs.join('&');
-    const withPass = PASSPHRASE ? `${base}${PASSPHRASE}` : base;
+    const withPass = PASSPHRASE ? `${base}&passphrase=${encodePlusUpper(PASSPHRASE)}` : base;
     const signature = crypto.createHash('md5').update(withPass).digest('hex');
     const action = `${PAYFAST_HOST}/eng/process?${base}&signature=${signature}`;
     return res.json({ base: withPass, signature, action });
