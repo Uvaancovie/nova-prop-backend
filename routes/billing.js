@@ -177,6 +177,10 @@ router.post('/subscribe', authRequired, async (req, res) => {
       'subscription_notify_email','subscription_notify_webhook','subscription_notify_buyer'
     ];
     const { base, signature } = buildSignature(FORM_ORDER, params, PASSPHRASE);
+    if (String(process.env.PAYFAST_DEBUG || '').toLowerCase() === 'true') {
+      console.log('[PAYFAST DEBUG] checkout base:', base);
+      console.log('[PAYFAST DEBUG] checkout signature:', signature);
+    }
     const action = `${PAYFAST_HOST}/eng/process`;
     const escapeHtml = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
     const inputs = Object.keys(params).map(k => `<input type="hidden" name="${escapeHtml(k)}" value="${escapeHtml(params[k] ?? '')}" />`).join('') + `<input type="hidden" name="signature" value="${escapeHtml(signature)}" />`;
