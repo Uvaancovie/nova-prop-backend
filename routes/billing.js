@@ -190,31 +190,15 @@ router.post('/subscribe', authRequired, async (req, res) => {
       cycles: 0,
     };
     const PASSPHRASE = process.env.PAYFAST_PASSPHRASE || require('../src/lib/payfast').PASSPHRASE || '';
-    // Build cleaned params and base using FORM_ORDER
-    const cleaned = {};
-    for (const [k, v] of Object.entries(params)) {
-      if (v === undefined || v === null) continue;
-      const sv = String(v).trim();
-      if (!sv) continue;
-      cleaned[k] = sv;
-    }
-    const pairs = [];
-    for (const key of FORM_ORDER) {
-      if (Object.prototype.hasOwnProperty.call(cleaned, key)) {
-        pairs.push(`${key}=${encodeURIComponent(String(cleaned[key])).replace(/%20/g, '+').replace(/%[0-9a-f]{2}/g, m => m.toUpperCase())}`);
-      }
-    }
-    const base = pairs.join('&');
-    const baseWithPass = PASSPHRASE ? `${base}&passphrase=${encodeURIComponent(PASSPHRASE).replace(/%20/g, '+').replace(/%[0-9a-f]{2}/g, m => m.toUpperCase())}` : base;
-    const signature = crypto.createHash('md5').update(baseWithPass).digest('hex');
+    // Build cleaned params and signature using alphabetical A->Z (drop empties, php-style encoding)
+    const { base, baseWithPass, signature, fields: cleaned, keys } = buildAlphabeticalSignature(params, PASSPHRASE);
     if (String(process.env.PAYFAST_DEBUG || '').toLowerCase() === 'true' || String(process.env.PAYFAST_DEBUG_SIGNATURE || '').toLowerCase() === 'true') {
       console.log('[PAYFAST DEBUG] checkout base (with passphrase):', baseWithPass);
       console.log('[PAYFAST DEBUG] checkout signature:', signature);
     }
     const action = `${PAYFAST_HOST}/eng/process`;
     const escapeHtml = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-    cleaned.signature = signature;
-    const inputs = Object.keys(cleaned).map(k => `<input type="hidden" name="${escapeHtml(k)}" value="${escapeHtml(cleaned[k] ?? '')}" />`).join('');
+    const inputs = keys.map(k => `<input type="hidden" name="${escapeHtml(k)}" value="${escapeHtml(cleaned[k] ?? '')}" />`).join('') + `<input type="hidden" name="signature" value="${escapeHtml(signature)}" />`;
     const html = `<!doctype html><html><body><form id="pf" action="${action}" method="post">${inputs}</form><script>document.getElementById('pf').submit();</script></body></html>`;
     res.json({ redirectHtml: html });
   } catch (e) {
