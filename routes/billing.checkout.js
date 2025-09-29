@@ -1,30 +1,13 @@
 const express = require('express');
 const crypto = require('crypto');
 const { PAYFAST_HOST, MERCHANT_ID, MERCHANT_KEY, PASSPHRASE } = require('../src/lib/payfast');
+const { signWithMode, FORM_ORDER: SIGN_FORM_ORDER, MODES } = require('../src/lib/payfast-sign');
 const { getPlan } = require('../src/domain/plans');
 const authMiddleware = require('../middleware/auth');
 
 const router = express.Router();
 
-function encodePlusUpper(str) {
-  const s = String(str);
-  return encodeURIComponent(s).replace(/%20/g, '+').replace(/%[0-9a-f]{2}/g, m => m.toUpperCase());
-}
-
-function buildSignature(formOrderKeys, fields, passphrase) {
-  const pairs = [];
-  for (const key of formOrderKeys) {
-    const v = fields[key];
-    if (v === undefined || v === null) continue;
-    const sv = String(v).trim();
-    if (sv === '') continue;
-    pairs.push(`${key}=${encodePlusUpper(sv)}`);
-  }
-  let base = pairs.join('&');
-  if (passphrase) base += `&passphrase=${encodePlusUpper(passphrase)}`;
-  const signature = crypto.createHash('md5').update(base).digest('hex');
-  return { base, signature };
-}
+const DEFAULT_SIGNATURE_MODE = process.env.PAYFAST_SIGNATURE_MODE || MODES.MODE_FORM_ENC;
 
 const authRequired = authMiddleware.protect || authMiddleware.authRequired || ((req,res,next) => { if (!req.user) return res.status(401).json({ message: 'Unauthorized' }); next(); });
 
@@ -88,18 +71,17 @@ router.post('/billing/checkout/:planId', authRequired, async (req, res) => {
       'subscription_notify_email','subscription_notify_webhook','subscription_notify_buyer'
     ];
 
-    // Build signature in FORM_ORDER and post fields in the same order
-    const { base, signature } = buildSignature(FORM_ORDER, cleanedFields, passphrase);
+    // Build signature in selected mode and post fields in the same order returned
+    const { base, signature, orderedKeys } = signWithMode(DEFAULT_SIGNATURE_MODE, cleanedFields, passphrase, SIGN_FORM_ORDER);
     if (String(process.env.PAYFAST_DEBUG || '').toLowerCase() === 'true' || String(process.env.PAYFAST_DEBUG_SIGNATURE || '').toLowerCase() === 'true') {
-      console.log('[PAYFAST DEBUG] checkout base (FORM ORDER + passphrase):', base);
+      console.log('[PAYFAST DEBUG] checkout base (with passphrase):', base);
       console.log('[PAYFAST DEBUG] checkout signature:', signature);
     }
 
     const action = `${PAYFAST_HOST}/eng/process`;
     const escapeHtml = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-    // Build inputs in FORM_ORDER (only keys present in cleanedFields)
-    const inputs = FORM_ORDER.filter(k => Object.prototype.hasOwnProperty.call(cleanedFields, k))
-      .map(k => `<input type="hidden" name="${escapeHtml(k)}" value="${escapeHtml(cleanedFields[k] ?? '')}" />`).join('')
+    // Build inputs in the orderedKeys returned by the signer
+    const inputs = orderedKeys.map(k => `<input type="hidden" name="${escapeHtml(k)}" value="${escapeHtml(cleanedFields[k] ?? '')}" />`).join('')
       + `<input type="hidden" name="signature" value="${escapeHtml(signature)}" />`;
     res.setHeader('Content-Type', 'text/html');
     return res.send(`<!doctype html><html><body><form id="pf" action="${action}" method="post">${inputs}</form><script>document.getElementById('pf').submit();</script></body></html>`);
