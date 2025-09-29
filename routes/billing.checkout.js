@@ -77,7 +77,21 @@ router.post('/billing/checkout/:planId', authRequired, async (req, res) => {
       'subscription_type','billing_date','recurring_amount','frequency','cycles',
       'subscription_notify_email','subscription_notify_webhook','subscription_notify_buyer'
     ];
-    const { base, signature } = buildSignature(FORM_ORDER, params, process.env.PAYFAST_PASSPHRASE || '');
+    // Use alphabetical signature as PayFast expects for Custom Integration
+    const { base, signature } = (function(){
+      const clean = {};
+      for (const [k, v] of Object.entries(params)) {
+        if (v === undefined || v === null) continue;
+        const sv = String(v).trim();
+        if (!sv) continue;
+        clean[k] = sv;
+      }
+      const keys = Object.keys(clean).sort();
+      const base = keys.map(k => `${k}=${encodeURIComponent(String(clean[k])).replace(/%20/g, '+').replace(/%[0-9a-f]{2}/g, m => m.toUpperCase())}`).join('&');
+      const baseWithPass = (process.env.PAYFAST_PASSPHRASE || '') ? `${base}&passphrase=${encodeURIComponent(process.env.PAYFAST_PASSPHRASE).replace(/%20/g, '+').replace(/%[0-9a-f]{2}/g, m => m.toUpperCase())}` : base;
+      const signature = require('crypto').createHash('md5').update(baseWithPass).digest('hex');
+      return { base: baseWithPass, signature };
+    })();
     if (String(process.env.PAYFAST_DEBUG || '').toLowerCase() === 'true') {
       console.log('[PAYFAST DEBUG] checkout base:', base);
       console.log('[PAYFAST DEBUG] checkout signature:', signature);

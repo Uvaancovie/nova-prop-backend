@@ -116,10 +116,21 @@ router.post('/payfast/itn', async (req, res) => {
       console.info('PayFast ITN has no signature (signature requirement may be disabled). Skipping signature verification.');
       console.debug('PayFast ITN parsed form', Object.keys(form).reduce((acc, k) => { acc[k] = form[k]; return acc; }, {}));
     } else {
-      // Primary verification: ordered fields (document/form order) with passphrase
-      const { base: orderedBase, calc: orderedCalc } = verifyItnSignatureOrdered(form, PASSPHRASE);
-      if ((orderedCalc || '').toLowerCase() === receivedSig) {
-        console.info('PayFast ITN signature matched using ordered base');
+      // Primary verification: alphabetical A->Z signature (non-empty fields only)
+      const clean = {};
+      for (const [k, v] of Object.entries(form)) {
+        if (k === 'signature') continue;
+        if (v === undefined || v === null) continue;
+        const sv = String(v).trim();
+        if (!sv) continue;
+        clean[k] = sv;
+      }
+      const keys = Object.keys(clean).sort();
+      const baseAlpha = keys.map(k => `${k}=${encodeURIComponent(String(clean[k])).replace(/%20/g, '+').replace(/%[0-9a-f]{2}/g, m => m.toUpperCase())}`).join('&');
+      const baseWithPass = PASSPHRASE ? `${baseAlpha}&passphrase=${encodeURIComponent(PASSPHRASE).replace(/%20/g, '+').replace(/%[0-9a-f]{2}/g, m => m.toUpperCase())}` : baseAlpha;
+      const alphaCalc = crypto.createHash('md5').update(baseWithPass).digest('hex');
+      if (alphaCalc.toLowerCase() === receivedSig) {
+        console.info('PayFast ITN signature matched using alphabetical A->Z base');
       } else {
         // Fallback: try computed variants
         const variants = computeVariantSignatures(form, raw).map(v => ({ name: v.name, signature: (v.signature||'').toLowerCase() }));
@@ -127,7 +138,7 @@ router.post('/payfast/itn', async (req, res) => {
         if (!matched) {
           console.warn('PayFast ITN signature mismatch - no variant matched', {
             receivedSig: receivedSig,
-            orderedBase: orderedBase,
+            baseWithPass,
             rawBodyPreview: raw && raw.slice(0, 200),
             parsedForm: Object.keys(form).reduce((acc, k) => { acc[k] = form[k]; return acc; }, {}),
             variants

@@ -30,6 +30,22 @@ function buildSignature(formOrderKeys, fields, passphrase) {
   return { base, signature };
 }
 
+// Alphabetical signature builder: sort keys A->Z, drop empties, encode with + and UPPERCASE %
+function buildAlphabeticalSignature(fields, passphrase) {
+  const clean = {};
+  for (const [k, v] of Object.entries(fields)) {
+    if (v === undefined || v === null) continue;
+    const sv = String(v).trim();
+    if (!sv) continue;
+    clean[k] = sv;
+  }
+  const keys = Object.keys(clean).sort();
+  const base = keys.map(k => `${k}=${encodePlusUpper(clean[k])}`).join('&');
+  const baseWithPass = passphrase ? `${base}&passphrase=${encodePlusUpper(passphrase)}` : base;
+  const signature = crypto.createHash('md5').update(baseWithPass).digest('hex');
+  return { base: baseWithPass, signature };
+}
+
 // POST /api/billing/start-trial
 router.post('/start-trial', authRequired, async (req, res) => {
   try {
@@ -101,7 +117,7 @@ router.get('/debug/:planId', authRequired, (req, res) => {
     'subscription_type','billing_date','recurring_amount','frequency','cycles',
     'subscription_notify_email','subscription_notify_webhook','subscription_notify_buyer'
   ];
-  const { base, signature } = buildSignature(FORM_ORDER, params, PASSPHRASE);
+  const { base, signature } = buildAlphabeticalSignature(params, PASSPHRASE);
   const PAYFAST_HOST = require('../src/lib/payfast').PAYFAST_HOST;
   const action = `${PAYFAST_HOST}/eng/process`;
   res.json({ params, base, signature, action });
@@ -176,7 +192,7 @@ router.post('/subscribe', authRequired, async (req, res) => {
       'subscription_type','billing_date','recurring_amount','frequency','cycles',
       'subscription_notify_email','subscription_notify_webhook','subscription_notify_buyer'
     ];
-    const { base, signature } = buildSignature(FORM_ORDER, params, PASSPHRASE);
+  const { base, signature } = buildAlphabeticalSignature(params, PASSPHRASE);
     if (String(process.env.PAYFAST_DEBUG || '').toLowerCase() === 'true') {
       console.log('[PAYFAST DEBUG] checkout base:', base);
       console.log('[PAYFAST DEBUG] checkout signature:', signature);
@@ -235,7 +251,7 @@ router.post('/checkout/:planId', authRequired, async (req, res) => {
       'subscription_type','billing_date','recurring_amount','frequency','cycles',
       'subscription_notify_email','subscription_notify_webhook','subscription_notify_buyer'
     ];
-    const { base, signature } = buildSignature(FORM_ORDER, params, PASSPHRASE);
+  const { base, signature } = buildAlphabeticalSignature(params, PASSPHRASE);
     const action = `${PAYFAST_HOST}/eng/process`;
     const escapeHtml = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
     const inputs = Object.keys(params).map(k => `<input type="hidden" name="${escapeHtml(k)}" value="${escapeHtml(params[k] ?? '')}" />`).join('') + `<input type="hidden" name="signature" value="${escapeHtml(signature)}" />`;
