@@ -31,10 +31,29 @@ router.post('/payfast/itn', async (req, res) => {
 
     // Verify
     const expected = md5Signature(form);
-    if ((form.signature||'').toLowerCase() !== expected.toLowerCase()) return res.status(200).send('OK');
-    if (form.merchant_id !== MERCHANT_ID) return res.status(200).send('OK');
+    const receivedSig = (form.signature || '').toLowerCase();
+    const expectedSig = (expected || '').toLowerCase();
+    if (receivedSig !== expectedSig) {
+      console.warn('PayFast ITN signature mismatch', {
+        receivedSig: receivedSig,
+        expectedSig: expectedSig,
+        rawBodyPreview: raw && raw.slice(0, 200),
+        parsedForm: Object.keys(form).reduce((acc, k) => { acc[k] = form[k]; return acc; }, {}),
+      });
+      // Return 200 OK per PayFast spec but log details to help debugging
+      return res.status(200).send('OK');
+    }
+
+    if (form.merchant_id !== MERCHANT_ID) {
+      console.warn('PayFast ITN merchant_id mismatch', { received: form.merchant_id, expected: MERCHANT_ID });
+      return res.status(200).send('OK');
+    }
+
     const valid = await remoteValidate(raw);
-    if (!valid) return res.status(200).send('OK');
+    if (!valid) {
+      console.warn('PayFast remote validation failed', { rawBodyPreview: raw && raw.slice(0, 200) });
+      return res.status(200).send('OK');
+    }
 
     const parts = (form.m_payment_id || '').split('_');
     const planId = parts[1];
