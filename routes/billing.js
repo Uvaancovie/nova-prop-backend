@@ -119,14 +119,23 @@ router.get('/debug/:planId', authRequired, (req, res) => {
     cycles: 0,
   };
   const PASSPHRASE = process.env.PAYFAST_PASSPHRASE || require('../src/lib/payfast').PASSPHRASE || '';
-  // Build signature using FORM_ORDER (document order) for subscription flows
-  // Use alphabetical signature for debug output so it matches the signing used in checkout
-  const { base, baseWithPass, signature, fields: cleanedDebug, keys } = buildAlphabeticalSignature(params, PASSPHRASE);
+  // Build signature using FORM_ORDER (document order) for subscription/payment-page flows
+  // Clean params (skip empties) and compute signature in FORM_ORDER so debug output matches the payment page
+  const cleanedDebug = {};
+  for (const [k, v] of Object.entries(params)) {
+    if (v === undefined || v === null) continue;
+    const sv = String(v).trim();
+    if (!sv) continue;
+    cleanedDebug[k] = sv;
+  }
+  const { base: baseForm, signature: signature } = buildSignature(FORM_ORDER, cleanedDebug, PASSPHRASE);
+  const base = baseForm;
+  const keys = FORM_ORDER.filter(k => Object.prototype.hasOwnProperty.call(cleanedDebug, k));
   const PAYFAST_HOST = require('../src/lib/payfast').PAYFAST_HOST;
   const action = `${PAYFAST_HOST}/eng/process`;
   if (String(process.env.PAYFAST_DEBUG || '').toLowerCase() === 'true' || String(process.env.PAYFAST_DEBUG_SIGNATURE || '').toLowerCase() === 'true') {
-    console.log('[PAYFAST DEBUG] checkout base (with passphrase):', baseWithPass);
-    console.log('[PAYFAST DEBUG] checkout signature:', signature);
+  console.log('[PAYFAST DEBUG] checkout base (FORM ORDER + passphrase):', base);
+  console.log('[PAYFAST DEBUG] checkout signature:', signature);
   }
   res.json({ params: cleanedDebug, base: baseWithPass, signature, action });
 });
@@ -191,14 +200,22 @@ router.post('/subscribe', authRequired, async (req, res) => {
     };
     const PASSPHRASE = process.env.PAYFAST_PASSPHRASE || require('../src/lib/payfast').PASSPHRASE || '';
     // Build cleaned params and signature using alphabetical A->Z (drop empties, php-style encoding)
-    const { base, baseWithPass, signature, fields: cleaned, keys } = buildAlphabeticalSignature(params, PASSPHRASE);
+    // For subscribe (legacy hook) we must sign in FORM_ORDER and post the same fields
+    const cleaned = {};
+    for (const [k, v] of Object.entries(params)) {
+      if (v === undefined || v === null) continue;
+      const sv = String(v).trim();
+      if (!sv) continue;
+      cleaned[k] = sv;
+    }
+    const { base: baseSub, signature: signatureSub } = buildSignature(FORM_ORDER, cleaned, PASSPHRASE);
     if (String(process.env.PAYFAST_DEBUG || '').toLowerCase() === 'true' || String(process.env.PAYFAST_DEBUG_SIGNATURE || '').toLowerCase() === 'true') {
-      console.log('[PAYFAST DEBUG] checkout base (with passphrase):', baseWithPass);
-      console.log('[PAYFAST DEBUG] checkout signature:', signature);
+      console.log('[PAYFAST DEBUG] checkout base (FORM ORDER + passphrase):', baseSub);
+      console.log('[PAYFAST DEBUG] checkout signature:', signatureSub);
     }
     const action = `${PAYFAST_HOST}/eng/process`;
     const escapeHtml = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-    const inputs = keys.map(k => `<input type="hidden" name="${escapeHtml(k)}" value="${escapeHtml(cleaned[k] ?? '')}" />`).join('') + `<input type="hidden" name="signature" value="${escapeHtml(signature)}" />`;
+    const inputs = FORM_ORDER.filter(k => Object.prototype.hasOwnProperty.call(cleaned, k)).map(k => `<input type="hidden" name="${escapeHtml(k)}" value="${escapeHtml(cleaned[k] ?? '')}" />`).join('') + `<input type="hidden" name="signature" value="${escapeHtml(signatureSub)}" />`;
     const html = `<!doctype html><html><body><form id="pf" action="${action}" method="post">${inputs}</form><script>document.getElementById('pf').submit();</script></body></html>`;
     res.json({ redirectHtml: html });
   } catch (e) {
@@ -250,18 +267,18 @@ router.post('/checkout/:planId', authRequired, async (req, res) => {
       'subscription_type','billing_date','recurring_amount','frequency','cycles',
       'subscription_notify_email','subscription_notify_webhook','subscription_notify_buyer'
     ];
-  const { base, signature } = buildAlphabeticalSignature(params, PASSPHRASE);
+  // Build cleaned params and sign in FORM_ORDER (payment page expects documented form order)
+  const cleaned = {};
+  for (const [k, v] of Object.entries(params)) {
+    if (v === undefined || v === null) continue;
+    const sv = String(v).trim();
+    if (!sv) continue;
+    cleaned[k] = sv;
+  }
+  const { base: baseCheckout, signature: signatureCheckout } = buildSignature(FORM_ORDER, cleaned, PASSPHRASE);
     const action = `${PAYFAST_HOST}/eng/process`;
     const escapeHtml = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-    const cleaned = {};
-    for (const [k, v] of Object.entries(params)) {
-      if (v === undefined || v === null) continue;
-      const sv = String(v).trim();
-      if (!sv) continue;
-      cleaned[k] = sv;
-    }
-    cleaned.signature = signature;
-    const inputs = Object.keys(cleaned).map(k => `<input type="hidden" name="${escapeHtml(k)}" value="${escapeHtml(cleaned[k] ?? '')}" />`).join('');
+    const inputs = FORM_ORDER.filter(k => Object.prototype.hasOwnProperty.call(cleaned, k)).map(k => `<input type="hidden" name="${escapeHtml(k)}" value="${escapeHtml(cleaned[k] ?? '')}" />`).join('') + `<input type="hidden" name="signature" value="${escapeHtml(signatureCheckout)}" />`;
     res.setHeader('Content-Type', 'text/html');
     return res.send(`<!doctype html><html><body>${/* include form with inputs for POST */''}<form id="pf" action="${action}" method="post">${inputs}</form><script>document.getElementById('pf').submit();</script></body></html>`);
   } catch (err) {
@@ -310,6 +327,72 @@ router.post('/compute-signature', authRequired, (req, res) => {
     return res.json({ base: withPass, signature, action });
   } catch (err) {
     console.error('compute-signature error', err);
+    return res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// Dev-only: return both FORM_ORDER and alphabetical signatures for given params or planId
+router.post('/dev-signature-check', authRequired, (req, res) => {
+  if (process.env.NODE_ENV === 'production') return res.status(404).send('Not found');
+  try {
+    // Accept either { planId } or { params: { ... } }
+    const planId = req.body && req.body.planId ? String(req.body.planId) : null;
+    let params = req.body && req.body.params && typeof req.body.params === 'object' ? req.body.params : null;
+    if (planId) {
+      const plan = getPlan(planId);
+      const orgId = (req.user && (req.user.orgId || req.user.organizationId)) || 'unknown';
+      const m_payment_id = `sub_${planId}_${orgId}_${Date.now()}`;
+      params = {
+        merchant_id: process.env.PAYFAST_MERCHANT_ID || require('../src/lib/payfast').MERCHANT_ID,
+        merchant_key: process.env.PAYFAST_MERCHANT_KEY || require('../src/lib/payfast').MERCHANT_KEY,
+        return_url: `${process.env.APP_BASE_URL}/billing/return`,
+        cancel_url: `${process.env.APP_BASE_URL}/billing/cancel`,
+        notify_url: `${process.env.API_BASE_URL}/payfast/itn`,
+        name_first: req.user.firstName || req.user.name || 'PropNova',
+        name_last: req.user.lastName || '',
+        email_address: req.user.email || '',
+        m_payment_id,
+        item_name: `PropNova ${plan.label} Subscription`,
+        amount: Number(plan.priceZar).toFixed(2),
+        subscription_type: 1,
+        recurring_amount: Number(plan.priceZar).toFixed(2),
+        frequency: 3,
+        cycles: 0,
+      };
+    }
+
+    if (!params || typeof params !== 'object') return res.status(400).json({ message: 'Missing params or planId' });
+
+    const PASSPHRASE = process.env.PAYFAST_PASSPHRASE || require('../src/lib/payfast').PASSPHRASE || '';
+
+    // Clean params
+    const cleaned = {};
+    for (const [k, v] of Object.entries(params)) {
+      if (v === undefined || v === null) continue;
+      const sv = String(v).trim();
+      if (!sv) continue;
+      cleaned[k] = sv;
+    }
+
+    // FORM_ORDER base/signature
+    const formPairs = [];
+    for (const key of FORM_ORDER) {
+      if (!Object.prototype.hasOwnProperty.call(cleaned, key)) continue;
+      formPairs.push(`${key}=${encodePlusUpper(cleaned[key])}`);
+    }
+    const formBase = formPairs.join('&');
+    const formBaseWithPass = PASSPHRASE ? `${formBase}&passphrase=${encodePlusUpper(PASSPHRASE)}` : formBase;
+    const formSig = crypto.createHash('md5').update(formBaseWithPass).digest('hex');
+
+    // Alphabetical base/signature
+    const alphaKeys = Object.keys(cleaned).sort();
+    const alphaBase = alphaKeys.map(k => `${k}=${encodePlusUpper(cleaned[k])}`).join('&');
+    const alphaBaseWithPass = PASSPHRASE ? `${alphaBase}&passphrase=${encodePlusUpper(PASSPHRASE)}` : alphaBase;
+    const alphaSig = crypto.createHash('md5').update(alphaBaseWithPass).digest('hex');
+
+    return res.json({ ok: true, form: { base: formBaseWithPass, signature: formSig }, alphabetical: { base: alphaBaseWithPass, signature: alphaSig }, cleaned, formOrder: FORM_ORDER });
+  } catch (e) {
+    console.error('dev-signature-check error', e);
     return res.status(500).json({ message: 'Server error' });
   }
 });
