@@ -198,6 +198,10 @@ const payfastItn = require('./routes/payfast.itn');
 app.use('/api/billing', billingRoutes);
 app.use(payfastItn);
 
+// Newsletter routes
+const newsletterRoutes = require('./routes/newsletterRoutes');
+app.use('/api/newsletter', newsletterRoutes);
+
 // Start trial expiry job (if configured)
 try {
   const trialExpiryJob = require('./scripts/trialExpiryJob');

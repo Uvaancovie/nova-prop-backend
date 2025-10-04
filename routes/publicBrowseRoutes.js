@@ -7,6 +7,17 @@ const router = express.Router();
 // Public property browse - /public/properties?query=umhlanga&page=1
 router.get('/properties', async (req, res) => {
   try {
+    // Best-effort: if Authorization header present, attach req.user for client-side enrichment
+    if (!req.user && req.headers && req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
+      try {
+        const jwt = require('jsonwebtoken');
+        const decoded = jwt.verify(req.headers.authorization.split(' ')[1], process.env.JWT_SECRET);
+        const User = require('../models/User');
+        req.user = await User.findById(decoded.id).select('role _id').lean();
+      } catch (e) {
+        // ignore token errors - this is optional enrichment only
+      }
+    }
     const { query = '', page = 1 } = req.query;
     const PAGE_SIZE = 24;
     const find = { is_public: true };
@@ -26,10 +37,19 @@ router.get('/properties', async (req, res) => {
     const User = require('../models/User');
     const users = await User.find({ _id: { $in: userIds } }).select('profileImage').lean();
     const userMap = users.reduce((acc, u) => { acc[String(u._id)] = u; return acc; }, {});
-    items.forEach(it => {
+    const NewsletterSubscription = require('../models/NewsletterSubscription');
+    // Attach realtor_profileImage and isSubscribedToOwner when possible
+    for (const it of items) {
       const u = userMap[String(it.realtor_id)];
       it.realtor_profileImage = u ? u.profileImage || null : null;
-    });
+      it.realtorId = it.realtor_id || null;
+      if (req.user && req.user.role === 'client') {
+        const sub = await NewsletterSubscription.findOne({ realtorId: it.realtor_id, clientId: req.user._id, status: 'subscribed' }).lean();
+        it.isSubscribedToOwner = !!sub;
+      } else {
+        it.isSubscribedToOwner = false;
+      }
+    }
 
     res.json({ 
       success: true,
@@ -75,17 +95,38 @@ router.get('/properties/:slug', async (req, res) => {
     }
 
     // Enrich with realtor profile image when possible (best-effort)
+    // Best-effort: attach req.user from token if present to allow isSubscribedToOwner
+    if (!req.user && req.headers && req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
+      try {
+        const jwt = require('jsonwebtoken');
+        const decoded = jwt.verify(req.headers.authorization.split(' ')[1], process.env.JWT_SECRET);
+        const User = require('../models/User');
+        req.user = await User.findById(decoded.id).select('role _id').lean();
+      } catch (e) {
+        // ignore token issues
+      }
+    }
+
     if (prop.realtor_id) {
       try {
         const User = require('../models/User');
         const u = await User.findOne({ _id: prop.realtor_id }).select('profileImage').lean();
         prop.realtor_profileImage = u ? u.profileImage || null : null;
       } catch (e) {
-        // Ignore enrichment failures
         prop.realtor_profileImage = null;
+      }
+      prop.realtorId = prop.realtor_id;
+      if (req.user && req.user.role === 'client') {
+        const NewsletterSubscription = require('../models/NewsletterSubscription');
+        const sub = await NewsletterSubscription.findOne({ realtorId: prop.realtor_id, clientId: req.user._id, status: 'subscribed' }).lean();
+        prop.isSubscribedToOwner = !!sub;
+      } else {
+        prop.isSubscribedToOwner = false;
       }
     } else {
       prop.realtor_profileImage = null;
+      prop.realtorId = null;
+      prop.isSubscribedToOwner = false;
     }
 
     res.json({
