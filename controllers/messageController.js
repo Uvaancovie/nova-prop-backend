@@ -5,19 +5,56 @@ const Message = require('../models/Message');
 // @access  Private
 exports.getMessages = async (req, res) => {
   try {
-    const messages = await Message.find({
+    const { type, page = 1, pageSize = 20 } = req.query;
+    
+    // Build query
+    let query = {
       $or: [
         { sender_id: req.user.id },
-        { receiver_id: req.user.id }
+        { receiver_id: req.user.id },
+        { toUserId: req.user.id },
+        { fromUserId: req.user.id }
       ]
-    })
-    .sort('-createdAt')
-    .populate('sender_id', 'name email profileImage role')
-    .populate('receiver_id', 'name email profileImage role');
+    };
+
+    // Filter by type if provided (newsletter, dm, system)
+    if (type) {
+      query.type = type;
+      // For newsletters, only get ones sent TO the user
+      if (type === 'newsletter') {
+        query = {
+          type: 'newsletter',
+          $or: [
+            { receiver_id: req.user.id },
+            { toUserId: req.user.id }
+          ]
+        };
+      }
+    }
+
+    // Calculate pagination
+    const limit = parseInt(pageSize);
+    const skip = (parseInt(page) - 1) * limit;
+
+    // Get total count
+    const total = await Message.countDocuments(query);
+
+    // Get messages with pagination
+    const messages = await Message.find(query)
+      .sort('-createdAt')
+      .skip(skip)
+      .limit(limit)
+      .populate('sender_id', 'name email profileImage role')
+      .populate('receiver_id', 'name email profileImage role')
+      .populate('fromUserId', 'name email profileImage role')
+      .populate('toUserId', 'name email profileImage role');
 
     res.json({
       success: true,
       count: messages.length,
+      total,
+      page: parseInt(page),
+      pages: Math.ceil(total / limit),
       messages
     });
   } catch (error) {
@@ -64,8 +101,9 @@ exports.markAsRead = async (req, res) => {
       });
     }
 
-    // Check if user is the receiver
-    if (message.receiver_id.toString() !== req.user.id) {
+    // Check if user is the receiver (support both old and new field names)
+    const receiverId = message.toUserId || message.receiver_id;
+    if (!receiverId || receiverId.toString() !== req.user.id) {
       return res.status(401).json({
         success: false,
         error: 'Not authorized to mark this message as read'
