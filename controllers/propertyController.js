@@ -201,6 +201,48 @@ exports.updateProperty = async (req, res) => {
   }
 };
 
+// @desc    Save generated listing as draft
+// @route   POST /api/properties/save-generated
+// @access  Private (Realtor only)
+exports.saveGeneratedListing = async (req, res) => {
+  try {
+    const { title, description, amenities, keywords, beds, baths, propertyType, suburb, province, price } = req.body;
+
+    // Map to property fields
+    const propertyData = {
+      name: title,
+      description,
+      address: `${suburb}, ${province}`, // Combine suburb and province
+      city: suburb,
+      province,
+      price_per_night: parseFloat(price) || 0, // Assuming price is per night, adjust if needed
+      bedrooms: parseInt(beds) || 1,
+      bathrooms: parseInt(baths) || 1,
+      max_guests: (parseInt(beds) || 1) * 2, // Estimate guests
+      amenities: amenities || [],
+      is_available: false, // Draft, not available yet
+      is_public: false, // Not public until published
+      status: 'draft',
+      realtor_id: req.user.id,
+      realtor_name: req.user.name,
+      realtor_email: req.user.email,
+      realtor_phone: req.user.phone || ''
+    };
+
+    const property = await Property.create(propertyData);
+
+    res.status(201).json({
+      success: true,
+      property
+    });
+  } catch (error) {
+    res.status(400).json({
+      success: false,
+      error: error.message
+    });
+  }
+};
+
 // @desc    Delete property
 // @route   DELETE /api/properties/:id
 // @access  Private (Realtor only - owner)
@@ -231,6 +273,30 @@ exports.deleteProperty = async (req, res) => {
     });
   } catch (error) {
     res.status(400).json({
+      success: false,
+      error: error.message
+    });
+  }
+};
+
+// @desc    Get saved listings for realtor
+// @route   GET /api/properties/saved
+// @access  Private (Realtor only)
+exports.getSavedListings = async (req, res) => {
+  try {
+    console.log('Fetching saved listings for user:', req.user.id);
+    const properties = await Property.find({
+      realtor_id: req.user.id,
+      status: { $in: ['draft', 'saved'] }
+    }).sort('-createdAt');
+    console.log('Found properties:', properties.length);
+    res.json({
+      success: true,
+      data: properties
+    });
+  } catch (error) {
+    console.error('Error in getSavedListings:', error);
+    res.status(500).json({
       success: false,
       error: error.message
     });

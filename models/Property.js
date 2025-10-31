@@ -80,7 +80,12 @@ const propertySchema = new mongoose.Schema({
   },
   realtor_name: String,
   realtor_email: String,
-  realtor_phone: String
+  realtor_phone: String,
+  status: {
+    type: String,
+    enum: ['published', 'draft', 'saved'],
+    default: 'published'
+  }
 }, {
   timestamps: true,
   toJSON: { virtuals: true },

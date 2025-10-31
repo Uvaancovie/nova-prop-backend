@@ -186,8 +186,10 @@ app.use((req, res, next) => {
 // AI and public routes
 const aiChatRoutes = require('./routes/aiChatRoutes');
 const publicBrowseRoutes = require('./routes/publicBrowseRoutes');
+const aiGeneratorRoutes = require('./routes/aiGeneratorRoutes');
 app.use('/api/ai', aiChatRoutes);
 app.use('/api/public', publicBrowseRoutes);
+app.use('/api/ai-generator', aiGeneratorRoutes);
 
 // Serve uploads
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));

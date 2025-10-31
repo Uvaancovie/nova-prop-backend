@@ -5,9 +5,12 @@ const {
   getProperty,
   createProperty,
   updateProperty,
-  deleteProperty
+  deleteProperty,
+  saveGeneratedListing,
+  getSavedListings
 } = require('../controllers/propertyController');
 const { protect, authorize } = require('../middleware/auth');
+const checkSavedListingsLimit = require('../middleware/checkSavedListingsLimit');
 
 const router = express.Router();
 
@@ -17,6 +20,14 @@ router
   .route('/')
   .get(protect, getProperties)
   .post(protect, authorize('realtor'), createProperty);
+
+router
+  .route('/save-generated')
+  .post(protect, authorize('realtor'), checkSavedListingsLimit, saveGeneratedListing);
+
+router
+  .route('/saved')
+  .get(protect, authorize('realtor'), getSavedListings);
 
 router
   .route('/:id')
