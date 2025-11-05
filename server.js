@@ -175,6 +175,12 @@ app.use('/api/admin', adminRoutes);
 const meSummary = require('./routes/me.summary');
 app.use('/api', meSummary);
 
+// AI usage and admin metrics
+const aiUsageRoutes = require('./routes/aiUsage');
+const adminMetricsRoutes = require('./routes/adminMetrics');
+app.use('/api', aiUsageRoutes);
+app.use('/api', adminMetricsRoutes);
+
 // Normalize accidental double /api/api paths (frontend sometimes prefixes twice)
 app.use((req, res, next) => {
   if (req.originalUrl && req.originalUrl.startsWith('/api/api/')) {

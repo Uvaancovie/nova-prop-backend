@@ -333,5 +333,66 @@ router.post('/dev-signature-check', authRequired, (req, res) => {
   }
 });
 
+// POST /api/billing/ai-topup - One-off AI credits purchase
+router.post('/ai-topup', authRequired, async (req, res) => {
+  try {
+    const { credits } = req.body; // e.g., 100 or 250
+    
+    // Validate credits amount
+    const validOptions = {
+      100: 49,
+      250: 99
+    };
+    
+    if (!validOptions[credits]) {
+      return res.status(400).json({ message: 'Invalid credits amount' });
+    }
+    
+    const amount = validOptions[credits];
+    const user = req.user;
+    const orgId = user.orgId || user.organizationId;
+    
+    if (!orgId) {
+      return res.status(400).json({ message: 'Organization required' });
+    }
+
+    // Build PayFast once-off payment
+    const m_payment_id = `topup_ai_${credits}_${orgId}_${Date.now()}`;
+    const returnUrl = `${process.env.FRONTEND_URL}/billing/topup-return`;
+    const cancelUrl = `${process.env.FRONTEND_URL}/billing/cancel`;
+    const notifyUrl = `${process.env.BACKEND_URL}/payfast/itn-topup`;
+
+    const payload = {
+      merchant_id: MERCHANT_ID,
+      merchant_key: MERCHANT_KEY,
+      return_url: returnUrl,
+      cancel_url: cancelUrl,
+      notify_url: notifyUrl,
+      name_first: user.firstName || user.name || 'Nova Prop',
+      name_last: user.lastName || '',
+      email_address: user.email,
+      m_payment_id,
+      amount: amount.toFixed(2),
+      item_name: `Nova Prop AI Credits Top-Up (${credits} credits)`,
+      item_description: `Purchase ${credits} bonus AI generation credits`,
+      custom_str1: orgId.toString(),
+      custom_int1: credits
+    };
+
+    // Sign the payload
+    const result = signWithMode(DEFAULT_SIGNATURE_MODE, payload, PASSPHRASE, FORM_ORDER);
+    payload.signature = result.signature;
+
+    // Return redirect URL with form data
+    return res.json({
+      redirect: PAYFAST_HOST,
+      payload
+    });
+  } catch (err) {
+    console.error('ai-topup error', err);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
 module.exports = router;
 
