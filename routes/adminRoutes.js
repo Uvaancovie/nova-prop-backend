@@ -12,7 +12,7 @@ const router = express.Router();
 
 // Apply protection to all routes
 router.use(protect);
-router.use(authorize('admin'));
+router.use(authorize('admin', 'owner', 'realtor'));
 
 router.get('/users', getUsers);
 router.get('/stats', getStats);

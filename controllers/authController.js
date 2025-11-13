@@ -89,8 +89,11 @@ exports.login = async (req, res) => {
       });
     }
 
+    const token = user.getSignedJwtToken();
+
     res.json({
       success: true,
+      token,
       user: {
         id: user._id,
         name: user.name,

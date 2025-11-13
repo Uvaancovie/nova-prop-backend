@@ -17,11 +17,49 @@ const authRequired = authMiddleware.protect || authMiddleware.authRequired || ((
 // Middleware to check if user is owner/admin
 const requireOwner = async (req, res, next) => {
   try {
-    if (req.user.role !== 'owner' && req.user.role !== 'admin') {
-      return res.status(403).json({ message: 'Access denied. Owner role required.' });
+    console.log('🔐 Admin access check:', {
+      userId: req.user?._id,
+      email: req.user?.email,
+      role: req.user?.role
+    });
+    
+    if (!req.user) {
+      return res.status(401).json({ message: 'Authentication required' });
+    }
+    
+    if (!['owner', 'admin', 'realtor'].includes(req.user.role)) {
+      return res.status(403).json({ 
+        message: 'Access denied. Owner, admin, or realtor role required.',
+        currentRole: req.user.role 
+      });
     }
     next();
   } catch (error) {
+    console.error('requireOwner middleware error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+// Middleware to restrict to owners only
+const requireOwnerOnly = async (req, res, next) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ message: 'Authentication required' });
+    }
+
+    const authorizedEmail = 'way2flyagency@gmail.com';
+    const userEmail = (req.user.email || '').toLowerCase();
+
+    if (userEmail !== authorizedEmail) {
+      return res.status(403).json({
+        message: 'Access denied. Owner insights are restricted to the account owner.',
+        currentUser: req.user.email
+      });
+    }
+
+    next();
+  } catch (error) {
+    console.error('requireOwnerOnly middleware error:', error);
     res.status(500).json({ message: 'Server error' });
   }
 };
@@ -118,6 +156,82 @@ router.get('/admin/metrics', authRequired, requireOwner, async (req, res) => {
     });
   } catch (e) {
     console.error('admin/metrics error', e);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// GET /api/admin/owner/realtor-insights
+router.get('/admin/owner/realtor-insights', authRequired, requireOwnerOnly, async (req, res) => {
+  try {
+    const [totalRealtors, totalClients, realtorUsers, propertyCounts, aiUsageByRealtor] = await Promise.all([
+      User.countDocuments({ role: 'realtor' }),
+      User.countDocuments({ role: 'client' }),
+      User.find({ role: 'realtor' })
+        .sort({ createdAt: -1 })
+        .select('name email createdAt organizationId profileImage')
+        .lean(),
+      Property.aggregate([
+        { $group: { _id: '$realtor_id', count: { $sum: 1 } } }
+      ]),
+      AiUsage.aggregate([
+        {
+          $group: {
+            _id: '$userId',
+            totalRequests: { $sum: '$requests' },
+            totalTokens: { $sum: '$tokens' },
+            lastUsedAt: { $max: '$updatedAt' }
+          }
+        }
+      ])
+    ]);
+
+    const propertyCountMap = propertyCounts.reduce((acc, entry) => {
+      if (entry?._id) {
+        acc[entry._id.toString()] = entry.count;
+      }
+      return acc;
+    }, {});
+
+    const aiUsageMap = aiUsageByRealtor.reduce((acc, entry) => {
+      if (entry?._id) {
+        acc[entry._id.toString()] = {
+          totalRequests: entry.totalRequests || 0,
+          totalTokens: entry.totalTokens || 0,
+          lastUsedAt: entry.lastUsedAt || null
+        };
+      }
+      return acc;
+    }, {});
+
+    const realtorInsights = realtorUsers.map((realtor) => {
+      const realtorId = realtor._id.toString();
+      const aiUsage = aiUsageMap[realtorId] || {
+        totalRequests: 0,
+        totalTokens: 0,
+        lastUsedAt: null
+      };
+
+      return {
+        id: realtor._id,
+        name: realtor.name,
+        email: realtor.email,
+        organizationId: realtor.organizationId || null,
+        profileImage: realtor.profileImage || null,
+        createdAt: realtor.createdAt,
+        propertiesCount: propertyCountMap[realtorId] || 0,
+        aiUsage
+      };
+    });
+
+    res.json({
+      totals: {
+        realtors: totalRealtors,
+        clients: totalClients
+      },
+      realtors: realtorInsights
+    });
+  } catch (error) {
+    console.error('admin/owner/realtor-insights error', error);
     res.status(500).json({ message: 'Server error' });
   }
 });
