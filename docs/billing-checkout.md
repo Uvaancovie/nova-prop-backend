@@ -7,7 +7,7 @@ Here you go, Mr Covie — a **single “drop-in” Markdown brief** your 5o-mini
 **Stack:** Vite + React + shadcn/ui (frontend) · Express + Mongoose (backend on Render)
 **API Base:** `https://nova-prop-backend.onrender.com`
 **Landing file (exists):** `Propnova Landing Page (vite + Shadcn)` (see code snippet at end of this doc)
-**Plans (server truth):** `free:2` · `starter:5` · `growth:10`
+**Plans (server truth):** `free:2` · `starter:5` · `growth:10` · `agency:unlimited (Enterprise @ R399)`
 
 ## 0) Goals
 

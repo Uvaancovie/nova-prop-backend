@@ -59,7 +59,7 @@ router.post('/start-trial', authRequired, async (req, res) => {
 router.get('/debug/:planId', authRequired, (req, res) => {
   if (process.env.NODE_ENV === 'production') return res.status(404).send('Not found');
   const planId = String(req.params.planId);
-  if (!['starter','growth'].includes(planId)) return res.status(400).json({ message: 'Invalid plan' });
+  if (!['starter','growth','agency'].includes(planId)) return res.status(400).json({ message: 'Invalid plan' });
   const plan = getPlan(planId);
   const orgId = (req.user && (req.user.orgId || req.user.organizationId)) || 'unknown';
   const m_payment_id = `sub_${planId}_${orgId}_${Date.now()}`;
@@ -190,7 +190,7 @@ router.post('/subscribe', authRequired, async (req, res) => {
 router.post('/checkout/:planId', authRequired, async (req, res) => {
   try {
     const planId = String(req.params.planId);
-    if (!['starter','growth'].includes(planId)) return res.status(400).json({ message: 'Invalid plan' });
+    if (!['starter','growth','agency'].includes(planId)) return res.status(400).json({ message: 'Invalid plan' });
     const plan = getPlan(planId);
     // Ensure user has an organization record
     let orgId = (req.user && (req.user.orgId || req.user.organizationId));
