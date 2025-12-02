@@ -6,6 +6,7 @@ const { getPlan } = require('../src/domain/plans');
 const authMiddleware = require('../middleware/auth');
 const Subscription = require('../models/Subscription');
 const Organization = require('../models/Organization');
+const User = require('../models/User');
 
 const router = express.Router();
 
@@ -242,10 +243,15 @@ router.post('/checkout/:planId', authRequired, async (req, res) => {
 // GET /api/billing/subscription -> returns subscription info for user's org
 router.get('/subscription', authRequired, async (req, res) => {
   try {
-    const orgId = (req.user && (req.user.orgId || req.user.organizationId));
+    let orgId = (req.user && (req.user.orgId || req.user.organizationId));
     if (!orgId) {
-      console.warn('billing/subscription: authenticated user has no orgId, returning null subscription');
-      return res.json({ subscription: null, organization: null });
+      const org = await Organization.create({
+        name: `${req.user.name || req.user.email}'s org`,
+        planId: 'free',
+        owner: req.user._id
+      });
+      orgId = org._id;
+      await User.findByIdAndUpdate(req.user._id, { organizationId: orgId });
     }
     const sub = await Subscription.findOne({ orgId });
     const org = await Organization.findById(orgId);
