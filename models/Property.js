@@ -81,6 +81,10 @@ const propertySchema = new mongoose.Schema({
   realtor_name: String,
   realtor_email: String,
   realtor_phone: String,
+  rental_agreement: {
+    type: String,
+    default: ''
+  },
   status: {
     type: String,
     enum: ['published', 'draft', 'saved'],

@@ -1,5 +1,41 @@
 const Property = require('../models/Property');
 const User = require('../models/User');
+const fs = require('fs');
+const path = require('path');
+
+// Helper function to handle base64 PDF upload
+const handlePdfUpload = (base64Data, userId) => {
+  // Check if it's a base64 PDF
+  if (!base64Data || !base64Data.startsWith('data:application/pdf;base64,')) {
+    return base64Data; // Return as-is if it's a URL or empty
+  }
+
+  // Extract base64 content
+  const pdfData = base64Data.split(',')[1];
+  
+  // Validate file size (10MB limit)
+  const fileSizeBytes = Buffer.from(pdfData, 'base64').length;
+  const maxSize = 10 * 1024 * 1024; // 10MB
+  if (fileSizeBytes > maxSize) {
+    throw new Error('PDF file size exceeds 10MB limit');
+  }
+
+  // Ensure uploads directory exists
+  const uploadsDir = path.join(__dirname, '..', 'uploads', 'rental-agreements');
+  if (!fs.existsSync(uploadsDir)) {
+    fs.mkdirSync(uploadsDir, { recursive: true });
+  }
+
+  // Generate unique filename
+  const filename = `${userId}_${Date.now()}.pdf`;
+  const filePath = path.join(uploadsDir, filename);
+
+  // Write file
+  fs.writeFileSync(filePath, Buffer.from(pdfData, 'base64'));
+
+  // Return the URL path
+  return `/uploads/rental-agreements/${filename}`;
+};
 
 // @desc    Get all properties
 // @route   GET /api/properties
@@ -148,6 +184,18 @@ exports.createProperty = async (req, res) => {
     req.body.realtor_email = req.user.email;
     req.body.realtor_phone = req.user.phone || '';
 
+    // Handle PDF upload for rental agreement
+    if (req.body.rental_agreement) {
+      try {
+        req.body.rental_agreement = handlePdfUpload(req.body.rental_agreement, req.user.id);
+      } catch (pdfError) {
+        return res.status(400).json({
+          success: false,
+          error: pdfError.message
+        });
+      }
+    }
+
     const property = await Property.create(req.body);
 
     res.status(201).json({
@@ -182,6 +230,18 @@ exports.updateProperty = async (req, res) => {
         success: false,
         error: 'Not authorized to update this property'
       });
+    }
+
+    // Handle PDF upload for rental agreement
+    if (req.body.rental_agreement) {
+      try {
+        req.body.rental_agreement = handlePdfUpload(req.body.rental_agreement, req.user.id);
+      } catch (pdfError) {
+        return res.status(400).json({
+          success: false,
+          error: pdfError.message
+        });
+      }
     }
 
     property = await Property.findByIdAndUpdate(req.params.id, req.body, {

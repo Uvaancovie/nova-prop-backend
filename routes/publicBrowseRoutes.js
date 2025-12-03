@@ -27,7 +27,7 @@ router.get('/properties', async (req, res) => {
     }
 
     const items = await Property.find(find)
-      .select('public_slug name description city amenities price_per_night images createdAt realtor_name realtor_email realtor_id')
+      .select('public_slug name description city amenities price_per_night images createdAt realtor_name realtor_email realtor_id rental_agreement property_type')
       .limit(PAGE_SIZE)
       .sort({ createdAt: -1 })
       .lean();
@@ -74,7 +74,7 @@ router.get('/properties/:slug', async (req, res) => {
       public_slug: lookup,
       is_public: true
     })
-      .select('name description city province address amenities price_per_night images realtor_id realtor_name realtor_email realtor_phone createdAt bedrooms bathrooms max_guests public_slug')
+      .select('name description city province address amenities price_per_night images realtor_id realtor_name realtor_email realtor_phone createdAt bedrooms bathrooms max_guests public_slug rental_agreement property_type')
       .lean();
 
     // If not found by slug and the param looks like an ObjectId, try by _id as a fallback
@@ -83,7 +83,7 @@ router.get('/properties/:slug', async (req, res) => {
         _id: lookup,
         is_public: true
       })
-        .select('name description city province address amenities price_per_night images realtor_id realtor_name realtor_email realtor_phone createdAt bedrooms bathrooms max_guests public_slug')
+        .select('name description city province address amenities price_per_night images realtor_id realtor_name realtor_email realtor_phone createdAt bedrooms bathrooms max_guests public_slug rental_agreement property_type')
         .lean();
     }
 
