@@ -1,5 +1,6 @@
 const express = require('express');
 const AiUsage = require('../models/AiUsage');
+const GeneratedListing = require('../models/GeneratedListing');
 const Organization = require('../models/Organization');
 const { getPlan } = require('../src/domain/plans');
 const authMiddleware = require('../middleware/auth');
@@ -15,33 +16,33 @@ router.get('/me/ai-usage', authRequired, async (req, res) => {
   try {
     const orgId = req.user && (req.user.orgId || req.user.organizationId);
     
+    // Get AI usage for current month from GeneratedListing (same as checkListingLimit middleware)
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    
+    const used = await GeneratedListing.countDocuments({
+      realtorId: req.user._id,
+      createdAt: { $gte: monthStart }
+    });
+    
     if (!orgId) {
+      const renewsAt = new Date(now.getFullYear(), now.getMonth() + 1, 1);
       return res.json({
-        used: 0,
+        used,
         limit: 8,
         bonus: 0,
-        totalRemaining: 8,
+        totalRemaining: Math.max(0, 8 - used),
         planId: 'free',
-        renewsAt: null
+        renewsAt
       });
     }
 
     const org = await Organization.findById(orgId).lean();
     const plan = getPlan(org?.planId || 'free');
     
-    // Get AI usage for current month
-    const now = new Date();
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    
-    const aiUsage = await AiUsage.findOne({ 
-      userId: req.user._id,
-      createdAt: { $gte: monthStart }
-    }).lean();
-
-    const used = aiUsage?.requests || 0;
     const limit = plan.quotas.maxAiRequests || 8;
     const bonus = org?.aiBonusCreditsMonth || 0;
-    const totalRemaining = Math.max(0, limit + bonus - used);
+    const totalRemaining = limit === -1 ? -1 : Math.max(0, limit + bonus - used);
 
     // Calculate renewal date (first day of next month)
     const renewsAt = new Date(now.getFullYear(), now.getMonth() + 1, 1);

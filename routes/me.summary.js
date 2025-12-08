@@ -27,9 +27,17 @@ router.get('/me/summary', authRequired, async (req, res) => {
     const org = await Organization.findById(orgId).lean();
     const plan = getPlan(org?.planId || 'free');
     
-    // Get usage counts
-    const propertiesUsed = await Property.countDocuments({ orgId });
-    const aiUsage = await AiUsage.findOne({ userId: req.user._id }).lean();
+    // Get usage counts - properties are linked by realtor_id (user ID)
+    const propertiesUsed = await Property.countDocuments({ realtor_id: req.user._id });
+    
+    // Count AI generations for current month (matches checkListingLimit middleware)
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const aiGenerationsUsed = await GeneratedListing.countDocuments({
+      realtorId: req.user._id,
+      createdAt: { $gte: startOfMonth }
+    });
+    
     const savedListingsUsed = await GeneratedListing.countDocuments({ realtorId: req.user._id });
     
     const sub = await Subscription.findOne({ orgId }).lean();
@@ -39,7 +47,7 @@ router.get('/me/summary', authRequired, async (req, res) => {
       plan: { id: org?.planId || 'free', label: plan.label, status: org?.subscriptionStatus || (sub?.status || 'inactive') },
       usage: { 
         properties: { used: propertiesUsed, max: plan.quotas.maxProperties + (org?.extraPropertySlots || 0) },
-        aiGenerations: { used: aiUsage?.requests || 0, max: plan.quotas.maxAiRequests || 8 },
+        aiGenerations: { used: aiGenerationsUsed, max: plan.quotas.maxAiRequests || 8 },
         savedListings: { used: savedListingsUsed, max: plan.quotas.maxSavedListings || 10 }
       },
       subscription: sub ? { provider: sub.provider, nextRenewalAt, lastItnAt: sub.lastItnAt } : null
