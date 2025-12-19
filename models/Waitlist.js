@@ -18,6 +18,10 @@ const waitlistSchema = new mongoose.Schema({
     type: String,
     trim: true
   },
+  business: {
+    type: String,
+    trim: true
+  },
   role: {
     type: String,
     enum: ['client', 'realtor'],
