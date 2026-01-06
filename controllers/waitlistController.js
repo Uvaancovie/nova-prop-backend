@@ -115,7 +115,7 @@ exports.joinWaitlist = async (req, res) => {
     try {
       await resend.emails.send({
         from: 'PropStream Waitlist <onboarding@nova-prop.com>',
-        to: ['info@nova-prop.com'],
+        to: ['way2flyagency@gmail.com'],
         subject: '🎯 New Waitlist Signup',
         html: `
           <!DOCTYPE html>

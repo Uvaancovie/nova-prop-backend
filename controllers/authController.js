@@ -89,19 +89,16 @@ exports.login = async (req, res) => {
       });
     }
 
-    const token = user.getSignedJwtToken();
-
     res.json({
       success: true,
-      token,
+      token: generateToken(user._id),
       user: {
         id: user._id,
         name: user.name,
         email: user.email,
         role: user.role,
         phone: user.phone
-      },
-      token: generateToken(user._id)
+      }
     });
   } catch (error) {
     res.status(400).json({
