@@ -27,9 +27,15 @@ const requireOwner = async (req, res, next) => {
       return res.status(401).json({ message: 'Authentication required' });
     }
     
-    if (!['owner', 'admin', 'realtor'].includes(req.user.role)) {
+    const allowedRealtorAdminEmail = 'way2fdlyagency@gmail.com';
+    const isRoleAllowed = ['owner', 'admin', 'realtor'].includes(req.user.role);
+    const isAllowedRealtor =
+      req.user.role === 'realtor' &&
+      (req.user.email || '').toLowerCase() === allowedRealtorAdminEmail;
+
+    if (!isRoleAllowed || (req.user.role === 'realtor' && !isAllowedRealtor)) {
       return res.status(403).json({ 
-        message: 'Access denied. Owner, admin, or realtor role required.',
+        message: 'Access denied. Owner/admin required, or authorized realtor account only.',
         currentRole: req.user.role 
       });
     }

@@ -7,6 +7,7 @@ const cors = require('cors');
 const compression = require('compression');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
+const jwt = require('jsonwebtoken');
 const mongoSanitize = require('express-mongo-sanitize');
 const xss = require('xss-clean');
 const hpp = require('hpp');
@@ -42,7 +43,19 @@ app.use(helmet({
 const limiter = rateLimit({
   windowMs: 10 * 60 * 1000, // 10 minutes
   max: 500, // limit each IP to 500 requests per windowMs
-  message: 'Too many requests from this IP, please try again after 10 minutes'
+  message: 'Too many requests from this IP, please try again after 10 minutes',
+  skip: (req) => {
+    try {
+      const authHeader = req.headers.authorization || '';
+      if (!authHeader.startsWith('Bearer ')) return false;
+
+      const token = authHeader.slice(7);
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      return decoded?.role === 'realtor';
+    } catch (err) {
+      return false;
+    }
+  }
 });
 app.use('/api/', limiter);
 

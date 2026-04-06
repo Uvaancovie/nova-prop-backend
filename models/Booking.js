@@ -1,4 +1,7 @@
 const mongoose = require('mongoose');
+const { ACTIVITY_STATUSES, INVOICE_STATES, STAFF_MEMBERS } = require('../config/activityStatuses');
+
+const staffIds = STAFF_MEMBERS.map((staff) => staff.id);
 
 const bookingSchema = new mongoose.Schema({
   property_id: {
@@ -39,6 +42,62 @@ const bookingSchema = new mongoose.Schema({
     enum: ['pending', 'confirmed', 'cancelled', 'completed'],
     default: 'pending'
   },
+  activity_status: {
+    type: String,
+    enum: Object.keys(ACTIVITY_STATUSES),
+    default: 'provisional_booking'
+  },
+  invoice_state: {
+    type: String,
+    enum: Object.keys(INVOICE_STATES),
+    default: 'not_required'
+  },
+  assigned_staff_id: {
+    type: String,
+    enum: ['', ...staffIds],
+    default: ''
+  },
+  assigned_staff_name: {
+    type: String,
+    default: ''
+  },
+  operations_notes: {
+    type: String,
+    default: ''
+  },
+  status_history: [
+    {
+      field: {
+        type: String,
+        enum: ['status', 'activity_status', 'invoice_state', 'assigned_staff_id', 'operations_notes'],
+        required: true
+      },
+      old_value: {
+        type: String,
+        default: ''
+      },
+      new_value: {
+        type: String,
+        default: ''
+      },
+      note: {
+        type: String,
+        default: ''
+      },
+      changed_by: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User'
+      },
+      changed_by_name: {
+        type: String,
+        default: ''
+      },
+      changed_at: {
+        type: Date,
+        default: Date.now
+      }
+    }
+  ],
   realtor_id: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',

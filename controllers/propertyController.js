@@ -362,3 +362,116 @@ exports.getSavedListings = async (req, res) => {
     });
   }
 };
+
+// @desc    Scrape Airbnb or other property URL for details using AI
+// @route   POST /api/properties/scrape
+// @access  Private (Realtor only)
+exports.scrapePropertyUrl = async (req, res) => {
+  try {
+    const { url } = req.body;
+    if (!url) {
+      return res.status(400).json({ success: false, error: 'URL is required' });
+    }
+
+    const axios = require('axios');
+    const cheerio = require('cheerio');
+    const { chatJSON } = require('../lib/groq');
+
+    // Fetch the URL
+    let html = '';
+    try {
+      const response = await axios.get(url, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.5'
+        },
+        timeout: 10000
+      });
+      html = response.data;
+    } catch (fetchErr) {
+      console.error('Fetch error for scrape:', fetchErr.message);
+      return res.status(400).json({ success: false, error: 'Could not fetch the provided URL. Please verify it is correct and accessible.' });
+    }
+
+    // Extract useful text and meta details
+    const $ = cheerio.load(html);
+    const title = $('title').text() || $('meta[property="og:title"]').attr('content') || '';
+    const description = $('meta[property="og:description"]').attr('content') || $('meta[name="description"]').attr('content') || '';
+    const image = $('meta[property="og:image"]').attr('content') || '';
+    
+    // We try to grab the structured JSON-LD data if present (common in Airbnb/Booking)
+    let structuredData = '';
+    $('script[type="application/ld+json"]').each((i, el) => {
+      structuredData += $(el).html() + '\n';
+    });
+
+    // Also get all text from the body, limit to ~10,000 chars to save tokens
+    // We remove scripts, styles, etc.
+    $('script, style, noscript, svg, iframe').remove();
+    let bodyText = $('body').text().replace(/\s+/g, ' ').trim().substring(0, 10000);
+
+    // AI prompt to extract data
+    const messages = [
+      {
+        role: 'system',
+        content: `You are a real estate data extraction assistant. Extract property details from the provided webpage text, meta tags, and structured JSON data.
+        Return only a JSON object containing the exact fields requested, properly formatted. Do not include any explanation or prose.`
+      },
+      {
+        role: 'user',
+        content: `Extract the following details and format as JSON:
+        - name (string: The property title/name)
+        - description (string: Detailed description of the property)
+        - price_per_night (number: Estimated price per night from context, numeric only. Or 0 if unknown)
+        - bedrooms (number: Number of bedrooms, numeric only. Or 1 if unknown)
+        - bathrooms (number: Number of bathrooms, numeric only. Or 1 if unknown)
+        - max_guests (number: Maximum guests allowed. Or 2 if unknown)
+        - amenities (string: A comma-separated list of top 5-10 amenities, e.g. "WiFi, Pool, Kitchen")
+        - city (string: The city where the property is located)
+        - province (string: The province/state where the property is located)
+        - property_type (string: Must be one of: apartment, house, condo, villa, cabin, other. Guess best. Default 'apartment')
+        - houseRules (string: A short summary of house rules. e.g. "No smoking, No pets")
+        
+        Here is the webpage data:
+        Title: ${title}
+        Meta Description: ${description}
+        Structured Data: ${structuredData}
+        Body Content (truncated): ${bodyText}`
+      }
+    ];
+
+    const aiResult = await chatJSON(messages);
+
+    if (aiResult && !aiResult.error && !aiResult.raw) {
+      // AI returns JSON object, prep the initial object with the scraped image
+      const resultObj = {
+        ...aiResult,
+        imageInputs: [image, '', '']
+      };
+      
+      return res.json({ success: true, data: resultObj });
+    } else {
+      // Fallback if AI fails:
+      console.warn("AI parsing failed or returned raw. Using fallback parsing.");
+      const fallbackData = {
+        name: title.replace(/ - Airbnb$/, '').trim(),
+        description: description,
+        price_per_night: 0,
+        bedrooms: 1,
+        bathrooms: 1,
+        max_guests: 2,
+        amenities: '',
+        city: '',
+        province: '',
+        property_type: 'apartment',
+        houseRules: '',
+        imageInputs: [image, '', '']
+      };
+      return res.json({ success: true, data: fallbackData });
+    }
+  } catch (err) {
+    console.error('Error in scrapePropertyUrl:', err);
+    res.status(500).json({ success: false, error: 'Failed to scrape URL' });
+  }
+};

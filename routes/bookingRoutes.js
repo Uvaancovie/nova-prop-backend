@@ -5,7 +5,8 @@ const {
   createBooking,
   updateBooking,
   deleteBooking,
-  getCalendarBookings
+  getCalendarBookings,
+  getBookingOperationsConfig
 } = require('../controllers/bookingController');
 const { protect, authorize } = require('../middleware/auth');
 
@@ -17,6 +18,13 @@ router.get(
   protect, 
   authorize('realtor'), 
   getCalendarBookings
+);
+
+router.get(
+  '/operations-config',
+  protect,
+  authorize('realtor'),
+  getBookingOperationsConfig
 );
 
 router
